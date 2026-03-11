@@ -11,18 +11,46 @@ and wants live, speaker-attributed, translatable transcripts.
 
 ## Architecture
 
-### Static Frontend + Optional Backend
+### Dual-Mode: Local or Server-Backed
 
-The app is always a static frontend. The only variable is where the API key
-comes from:
+The app operates in one of two modes, selectable by the user:
 
-- **Self-hosted mode**: a small backend provides the API key via `/api/config`.
-  The user never manages a key.
-- **GitHub Pages mode**: user enters their API key in Settings, stored in
-  localStorage. JS connects directly to Soniox WebSocket.
+- **Local mode**: everything runs client-side. API key stored in localStorage,
+  transcripts saved to IndexedDB, no account needed.
+- **Server mode**: connects to a backend that provides auth (user accounts),
+  server-side transcript storage, and API key management. The user never handles
+  an API key.
 
-Detection is automatic: app loads, checks if `/api/config` exists. If yes, use
-server key. If 404, prompt user for key.
+#### Mode Selection
+
+Settings has a radio toggle:
+- `( ) Local`
+- `( ) Server: [________]`
+
+The default is configurable via a statically served `config.json` (updatable
+through CI/CD). For GitHub Pages deploys, the default is Local. For the friend's
+fork, CI sets it to the hosted server URL.
+
+#### Login Flow (Server Mode Default)
+
+When a backend is configured as default, users see a login screen:
+- Log in / Sign up buttons
+- "...or use locally without an account" link
+
+Choosing "use locally" switches to Local mode. The full Settings page is only
+shown once the user is "in" the app (either logged in or in local mode).
+
+#### Data Portability
+
+Export/import is a v1 feature to prevent data loss when switching modes:
+
+- **Settings > Data** always shows:
+  - Export transcripts (JSON)
+  - Import transcripts (JSON)
+- **When switching from local → server mode**, a prompt offers to import local
+  transcripts to the server (optional, not required)
+- **Persistent "Sync local data to server"** option in Settings > Data, visible
+  when in server mode and local transcripts exist. Grays out once synced.
 
 A fork-specific GitHub deployment pipeline can configure the app to point at a
 specific backend server without polluting the main repo.
@@ -32,7 +60,8 @@ specific backend server without polluting the main repo.
 - **Expo (React Native)** — web + Android from one codebase
 - **Expo Router** — file-based navigation with tab layout
 - **TypeScript** throughout
-- **IndexedDB** — local storage for transcripts and translation cache
+- **IndexedDB** — local storage for transcripts and translation cache (local mode)
+- **Backend API** — server-side storage with user accounts (server mode)
 
 ## Features
 
@@ -55,10 +84,12 @@ specific backend server without polluting the main repo.
 - Export: copy to clipboard, download as .txt/.srt
 
 ### Settings
-- API key field (only in GitHub Pages / no-server mode)
+- Mode toggle: Local / Server (with URL field)
+- API key field (only in local mode)
 - Default source/target languages
 - Display preferences (font size, show/hide timestamps)
 - Diarization and translation toggles (defaults)
+- Data management: export, import, sync local → server
 
 ## Project Structure
 
@@ -100,8 +131,10 @@ soniox-web/
 │   ├── soniox-async.ts         # File upload / batch API
 │   └── soniox-config.ts        # Key management (localStorage vs server)
 │
-├── storage/                    # Persistence layer
-│   └── db.ts                   # IndexedDB for transcripts + translation cache
+├── storage/                    # Persistence abstraction layer
+│   ├── storage.ts              # Interface — local and server implement this
+│   ├── local.ts                # IndexedDB implementation
+│   └── server.ts               # Backend API implementation
 │
 └── types/                      # Shared TypeScript types
     ├── transcript.ts
