@@ -248,7 +248,7 @@ provider selection through project structure and data model.
 > storage capacity than localStorage.
 
 - **Chosen:** IndexedDB via a `storage/db.ts` abstraction
-- **Rationale:** TBD
+- **Rationale:** user said, "IndexedDB is the goldilocks between localStorage size limits and sqlite overkill."
 - **Maps to:** V2
 - **Tags:** storage, persistence
 
@@ -333,8 +333,4 @@ provider selection through project structure and data model.
 
 ### Decisions Requiring Rationale
 
-> The following decisions lack verbatim rationale.
-> Would you like to provide it?
-
-- **D11: IndexedDB for storage** — chosen over localStorage/SQLite but rationale
-  was not explicitly discussed
+> None — all decisions have documented rationale.
