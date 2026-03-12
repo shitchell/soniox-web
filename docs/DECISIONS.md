@@ -124,7 +124,7 @@ provider selection through project structure and data model.
 
 - **Chosen:** On-demand translation with per-segment caching in IndexedDB
 - **Rationale:** user said, "i also like how their mobile app interface lets you save the transcript afterwards and show (1) the original in whatever language each speaker used or (2) some language you select. so auto-translation built-in. obvs we'd want to cache afterwards so that we aren't retranslating lol"
-- **Maps to:** G1, V2
+- **Maps to:** G1
 - **Tags:** translation, caching, cost
 
 **Considered:**
@@ -318,7 +318,7 @@ provider selection through project structure and data model.
   someone switches to backend mode, present an option (not a requirement) to
   import their locally stored data either at transition or at any other point (a
   persistent 'Sync local data to server' option that grays out once they do."
-- **Maps to:** G2, V2
+- **Maps to:** G2, V3
 - **Tags:** data portability, UX, storage
 
 **Considered:**
@@ -328,6 +328,163 @@ provider selection through project structure and data model.
 | Defer export/import to v2 | discussed | Smaller v1 scope | user said it "might feel like data loss" without it |
 | Keep local data accessible in server mode | discussed | Display message "switch back to local to access" | user said "that feels odd" |
 | Auto-migrate on switch (required) | claude considered | No data left behind | user wanted it as an option, not a requirement |
+
+---
+
+### Decisions Requiring Rationale
+
+> None — all decisions have documented rationale.
+
+---
+---
+
+## Session: 2026-03-12 — Technical Research & Translation Architecture
+
+**Context:** After completing the initial design, we ran two review agents
+against the DECISIONS.md: one with full context (consistency review) and one
+cold-read (no context). Both identified gaps that required technical research
+rather than discussion — specifically around Soniox API capabilities, Android
+audio constraints, Expo workflow requirements, and cross-platform storage. This
+session captures decisions informed by that research.
+
+**GVP source:** Inferred inline (same as Session 1)
+
+---
+
+### D15: Pluggable text translation service layer
+
+> Soniox has no text-translation endpoint. Post-hoc translation of saved
+> transcripts requires a separate translation layer with a plugin architecture.
+
+- **Chosen:** A `TranslationService` interface that plugins conform to, with
+  auto-discovery, per-service configuration (key/value pairs with types and
+  optional defaults), and per-service settings persistence. Initial test
+  services: Pig Latin and 1337 Speak.
+- **Rationale:** Soniox API research confirmed there is no text-translation
+  endpoint — translation is only available during audio processing. User said,
+  "let's add a text translation layer for translating transcriptions with a text
+  translate interface that various plugins for different services could conform
+  to." User said services should "define key/value pairs it requires (e.g.: api
+  keys, credentials, etc...) in local mode." User said, "selecting a service
+  would cause inputs to magically appear for that service's defined inputs.
+  configured values get saved -- locally or server-side -- such that, if a user
+  switches between translation services, their settings for each service gets
+  'remembered'." For initial testing, user said, "i would suggest we add two
+  silly services to start with just for testing: pig latin and 1337 speak. the
+  1337 speak one in particular should allow configuring custom replacement
+  patterns and letters to *not* replace."
+- **Maps to:** V1, G1
+- **Tags:** translation, architecture, plugins
+
+**Considered:**
+
+| Alternative | Source | Description | Why not? |
+|---|---|---|---|
+| Re-process audio through Soniox async API with translation | discussed | Keep everything in Soniox | Expensive (re-processes full audio), slow, wasteful |
+| Only support languages translated during live session | discussed | No extra service needed | Severely limits the "view in any language" feature |
+| Hardcode a single translation service (e.g., Google Translate) | claude considered | Simpler | Conflicts with V1 (modularity) and P2 (generic repo) |
+
+---
+
+### D16: Expo prebuild (CNG) workflow, not pure managed
+
+> Real-time audio streaming to a WebSocket requires native modules not available
+> in Expo's pure managed workflow.
+
+- **Chosen:** Expo prebuild/CNG workflow with `@siteed/expo-audio-studio` for
+  real-time PCM audio chunk streaming
+- **Rationale:** Research confirmed that Expo's official `expo-audio` and
+  `expo-av` only support record-to-file, not real-time chunk streaming. The
+  `@siteed/expo-audio-studio` package provides `onAudioStream` callbacks with
+  raw PCM data but requires `npx expo prebuild`. Modern Expo prebuild is not the
+  old painful "eject" — it still uses Expo tooling and config plugins.
+- **Maps to:** G3, P1
+- **Tags:** framework, audio, native
+
+**Considered:**
+
+| Alternative | Source | Description | Why not? |
+|---|---|---|---|
+| Pure managed workflow with expo-audio | discussed | Simpler setup | No real-time chunk streaming API; record-to-file only |
+| MediaRecorder API (web only) | discussed (initial design) | Works on web without native modules | Not available on native Android; doesn't solve cross-platform |
+| Web Audio API / AudioWorklet | claude considered | Lower-level web audio control | Web-only, same cross-platform problem |
+
+---
+
+### D17: Custom storage abstraction (IndexedDB on web, expo-sqlite on native)
+
+> IndexedDB is a browser API not available on native Android. Rather than bet on
+> expo-sqlite's alpha web support, use a custom abstraction layer.
+
+- **Chosen:** Storage interface with two implementations: IndexedDB for web,
+  expo-sqlite for native Android
+- **Rationale:** Research confirmed IndexedDB is unavailable on native Android.
+  expo-sqlite has web support but it is in alpha, requires WASM config and
+  specific HTTP headers (COEP/COOP). User said, "while it's still in alpha, i'd
+  go for the custom abstraction."
+- **Maps to:** G3, V2
+- **Tags:** storage, cross-platform
+
+**Considered:**
+
+| Alternative | Source | Description | Why not? |
+|---|---|---|---|
+| expo-sqlite everywhere (web + native) | discussed | Single library | Web support is alpha; requires WASM and COEP/COOP headers |
+| AsyncStorage | discussed | Simple key-value | 6MB size limit on Android; not suitable for transcript storage |
+| RxDB | discussed | Reactive, offline-first, sync support | Heavy dependency, likely overkill |
+| WatermelonDB | discussed | React Native optimized | No web support |
+
+---
+
+### D18: Audio capture via device microphone (speakerphone model)
+
+> Android restricts direct call audio capture to system/pre-installed apps.
+> The app captures audio from the device microphone only.
+
+- **Chosen:** Device microphone capture; user uses speakerphone during calls
+- **Rationale:** Research confirmed that Android's audio input sharing policy
+  gives phone calls top priority for the microphone — third-party apps receive
+  silence. Direct call audio capture requires system-level permissions
+  (`CAPTURE_AUDIO_OUTPUT`) unavailable to third-party apps. Google killed the
+  accessibility service loophole in May 2022. The AudioPlaybackCapture API
+  (Android 10+) also does not capture call audio. The practical approach is
+  speakerphone + device mic, which captures both sides of the conversation.
+- **Maps to:** G3
+- **Tags:** audio, android, constraints
+
+**Considered:**
+
+| Alternative | Source | Description | Why not? |
+|---|---|---|---|
+| Direct call audio capture | discussed | Capture phone audio stream directly | Requires system permissions unavailable to third-party apps |
+| AudioPlaybackCapture API | discussed | Android 10+ system audio capture | Does not capture call audio (excluded usage type) |
+| Accessibility service workaround | discussed | Was used by call recording apps | Google killed this in May 2022; apps removed from Play Store |
+
+---
+
+### D19: Soniox real-time diarization (with known accuracy tradeoff)
+
+> Soniox supports real-time diarization via WebSocket, but with lower accuracy
+> than async processing due to latency constraints.
+
+- **Chosen:** Use real-time diarization for live sessions, with the understanding
+  that accuracy is lower than async. Async API provides better diarization for
+  file uploads.
+- **Rationale:** Research confirmed Soniox real-time WebSocket API supports
+  diarization (up to 15 speakers) via `enable_speaker_diarization: true`. The
+  docs note "real-time speaker diarization is more challenging due to
+  low-latency constraints" with possible temporary speaker switches that
+  stabilize as more context arrives. The async API provides "significantly higher
+  diarization accuracy because the model has access to the full audio context."
+- **Maps to:** G1
+- **Tags:** diarization, soniox, accuracy
+
+**Considered:**
+
+| Alternative | Source | Description | Why not? |
+|---|---|---|---|
+| Skip real-time diarization, post-process via async | claude considered | Better accuracy | Defeats the purpose of real-time transcription |
+| Client-side diarization (pyannote via WASM) | claude considered | Independent of Soniox | Heavy, complex, likely too slow for real-time in browser |
 
 ---
 
