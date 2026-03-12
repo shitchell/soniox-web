@@ -741,6 +741,82 @@ semantics, export formats, and distribution plans.
 
 ---
 
+## Session: 2026-03-12 — Phase 1 Plan Review Fixes
+
+**Context:** Three review agents and a jest-native research agent found issues
+in the Phase 1 implementation plan. These decisions resolve the findings.
+
+### D30: speakerId is string, not number
+
+> Soniox WebSocket API returns speaker IDs as strings (e.g., `"1"`, `"2"`).
+> The original design doc listed `speakerId: number`. Updated to `string`
+> throughout types to match the wire format.
+
+- **Chosen:** `speakerId: string` in Token and Segment types
+- **Maps to:** G1 (correct data handling)
+- **Rationale:** Match the actual API response. Avoids unnecessary type
+  coercion at the boundary.
+
+### D31: Cross-platform styling via TypeScript theme object
+
+> Plain CSS (D23) is incompatible with React Native — no CSS variables, no
+> `:root`, no standard selectors on native. For web-only development D23
+> still applies, but the foundation layer uses a TypeScript theme object
+> (`styles/theme.ts`) that works with `StyleSheet.create()` on native and
+> inline styles on web.
+
+- **Chosen:** TypeScript theme constants (`colors`, `spacing`, `fontSizes`,
+  `radii`, `speakerColors`) consumed by StyleSheet.create() or inline styles
+- **Rejected:** NativeWind/Tailwind (user prefers plain CSS feel), CSS-in-JS
+  libraries (unnecessary dependency)
+- **Maps to:** P1 (one codebase), G3 (Android), D23 (plain CSS spirit)
+- **Rationale:** user said, "A sounds good to me" — TS theme is the simplest
+  cross-platform approach that preserves the design token structure from the
+  original CSS plan.
+
+### D32: Export formatters support language substitution with strict mode
+
+> Formatters accept `format(transcript, language?, strict?)`. When `language`
+> is provided, segment text is replaced with the cached translation. `strict`
+> (default `true`) throws `MissingTranslationError` on missing translations;
+> `false` falls back to original text.
+
+- **Chosen:** `strict: boolean = true` parameter on all formatters
+- **Maps to:** V3 (no data loss), D27 (export formatters)
+- **Rationale:** user said, "i would suggest we add a parameter
+  `format(transcript, language?, strict: bool = True)`. if strict == True,
+  then the function throws an error on missing translations. if false, then
+  it substitutes the original segment — whatever language it happened to be
+  in." UI will use pre-export validation to check for gaps before calling
+  format, and present a confirmation dialog. For now, declining cancels the
+  export; the design supports swapping in alternative behaviors later (e.g.,
+  a secondary modal offering to continue with original text).
+
+### D33: @testing-library/jest-native is deprecated — use built-in matchers
+
+> `@testing-library/jest-native` was merged into `@testing-library/react-native`
+> v12.4+. Custom matchers auto-register on import. No `setupFilesAfterEnv`
+> entry needed.
+
+- **Chosen:** Do not install `@testing-library/jest-native`. Use
+  `@testing-library/react-native` only. Correct Jest key is
+  `setupFilesAfterEnv` (not `setupFilesAfterSetup`).
+- **Maps to:** D24 (testing strategy)
+- **Rationale:** Deprecated package. Built-in matchers are zero-config.
+
+### D34: Zustand settings store persisted via `persist` middleware
+
+> Settings were in-memory only — lost on page refresh. Added Zustand
+> `persist` middleware with `localStorage`. API key is excluded from
+> persistence (security — re-enter per session).
+
+- **Chosen:** `zustand/middleware` `persist` with `createJSONStorage(() => localStorage)`
+- **Maps to:** V2 (simplicity), D22 (Zustand)
+- **Rationale:** One-line middleware addition. Without it, the settings store
+  is only useful for tests. Phase 3+ depends on settings surviving refresh.
+
+---
+
 ### Decisions Requiring Rationale
 
 > None — all decisions have documented rationale.

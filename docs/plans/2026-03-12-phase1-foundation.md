@@ -12,11 +12,13 @@ before any UI or Soniox integration. Local mode only — server mode comes in
 Phase 5.
 
 **Tech Stack:** Expo (React Native) with TypeScript, Zustand, Jest +
-jest-expo + @testing-library/react-native, Drizzle ORM (Phase 5), plain CSS.
+jest-expo + @testing-library/react-native, Drizzle ORM (Phase 5),
+TypeScript theme object + StyleSheet.create() for cross-platform styling.
 
 **Decisions:** See `docs/DECISIONS.md` for full rationale. Key refs: D8 (Expo),
 D9 (shared components), D10 (thin pages), D11 (IndexedDB), D15 (translation
-plugins), D17 (storage abstraction), D22 (Zustand), D23 (plain CSS), D24
+plugins), D17 (storage abstraction), D22 (Zustand), D23 (plain CSS — web-only,
+cross-platform styling uses TS theme + StyleSheet.create()), D24
 (testing strategy), D27 (export formatters).
 
 **Soniox API reference:** Token shapes are from actual Soniox docs. See
@@ -30,8 +32,8 @@ API page as canonical, with comments noting discrepancies.
 
 **Files:**
 - Create: `package.json`, `tsconfig.json`, `app.json`, `app/_layout.tsx`,
-  `app/(tabs)/_layout.tsx`, `jest.config.js`, `styles/theme.css`,
-  `styles/common.css`, `config.json`
+  `app/(tabs)/_layout.tsx`, `jest.config.js`, `styles/theme.ts`,
+  `config.json`
 - Create directories: `components/`, `features/`, `services/`, `storage/`,
   `translation/`, `translation/providers/`, `export/`, `export/formatters/`,
   `types/`, `styles/`, `__tests__/`
@@ -50,8 +52,12 @@ move. Adjust as needed — the goal is a working Expo tabs project.
 
 ```bash
 npx expo install zustand
-npm install --save-dev jest-expo @testing-library/react-native @testing-library/jest-native @types/jest
+npm install --save-dev jest-expo @testing-library/react-native @types/jest
 ```
+
+> **Note:** Do NOT install `@testing-library/jest-native` — it is deprecated.
+> Custom matchers (e.g., `toBeOnTheScreen()`, `toHaveTextContent()`) are now
+> built into `@testing-library/react-native` v12.4+ and require no setup.
 
 **Step 3: Configure Jest**
 
@@ -60,14 +66,21 @@ Create `jest.config.js`:
 ```javascript
 module.exports = {
   preset: 'jest-expo',
-  setupFilesAfterSetup: ['@testing-library/jest-native/extend-expect'],
   transformIgnorePatterns: [
-    'node_modules/(?!((jest-)?react-native|@react-native(-community)?)|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@sentry/react-native|native-base|react-native-svg)',
+    'node_modules/(?!((jest-)?react-native|@react-native(-community)?)|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@sentry/react-native|native-base|react-native-svg|zustand)',
   ],
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json'],
   testMatch: ['**/__tests__/**/*.(test|spec).(ts|tsx|js)'],
 };
 ```
+
+> **Fixes applied:**
+> - Removed `setupFilesAfterSetup` (wrong key name — correct key is
+>   `setupFilesAfterEnv`, but not needed since `@testing-library/react-native`
+>   v12.4+ auto-registers matchers on import)
+> - Removed `@testing-library/jest-native/extend-expect` (deprecated package)
+> - Added `|zustand` to `transformIgnorePatterns` (Zustand ships ESM; without
+>   this, Jest won't transform it and settings store tests will fail)
 
 **Step 4: Create directory structure**
 
@@ -86,92 +99,64 @@ Create `public/config.json`:
 }
 ```
 
-**Step 6: Create CSS foundation**
+**Step 6: Create TypeScript theme (cross-platform)**
 
-Create `styles/theme.css`:
+> **Why not CSS?** Plain CSS files don't work in React Native. CSS variables
+> (`:root`, `var(--...)`), standard selectors (`body`, `*`), and `@import`
+> are web-only. To keep one codebase for web + Android (D8/G3/P1), we use a
+> TypeScript theme object consumable by `StyleSheet.create()` on native and
+> by inline styles or a thin CSS-in-JS layer on web.
 
-```css
-:root {
-  /* Colors */
-  --color-primary: #2563eb;
-  --color-primary-hover: #1d4ed8;
-  --color-secondary: #64748b;
-  --color-background: #ffffff;
-  --color-surface: #f8fafc;
-  --color-surface-alt: #f1f5f9;
-  --color-text: #0f172a;
-  --color-text-muted: #64748b;
-  --color-text-inverse: #ffffff;
-  --color-border: #e2e8f0;
-  --color-error: #dc2626;
-  --color-success: #16a34a;
-  --color-warning: #d97706;
+Create `styles/theme.ts`:
 
-  /* Speaker colors */
-  --color-speaker-1: #2563eb;
-  --color-speaker-2: #dc2626;
-  --color-speaker-3: #16a34a;
-  --color-speaker-4: #d97706;
-  --color-speaker-5: #7c3aed;
+```typescript
+export const colors = {
+  primary: '#2563eb',
+  primaryHover: '#1d4ed8',
+  secondary: '#64748b',
+  background: '#ffffff',
+  surface: '#f8fafc',
+  surfaceAlt: '#f1f5f9',
+  text: '#0f172a',
+  textMuted: '#64748b',
+  textInverse: '#ffffff',
+  border: '#e2e8f0',
+  error: '#dc2626',
+  success: '#16a34a',
+  warning: '#d97706',
+} as const;
 
-  /* Typography */
-  --font-size-xs: 0.75rem;
-  --font-size-sm: 0.875rem;
-  --font-size-base: 1rem;
-  --font-size-lg: 1.125rem;
-  --font-size-xl: 1.25rem;
-  --font-size-2xl: 1.5rem;
+export const speakerColors = [
+  '#2563eb', // Speaker 1
+  '#dc2626', // Speaker 2
+  '#16a34a', // Speaker 3
+  '#d97706', // Speaker 4
+  '#7c3aed', // Speaker 5
+] as const;
 
-  /* Spacing */
-  --space-xs: 0.25rem;
-  --space-sm: 0.5rem;
-  --space-md: 1rem;
-  --space-lg: 1.5rem;
-  --space-xl: 2rem;
+export const fontSizes = {
+  xs: 12,
+  sm: 14,
+  base: 16,
+  lg: 18,
+  xl: 20,
+  '2xl': 24,
+} as const;
 
-  /* Borders */
-  --radius-sm: 0.25rem;
-  --radius-md: 0.5rem;
-  --radius-lg: 0.75rem;
-  --radius-full: 9999px;
+export const spacing = {
+  xs: 4,
+  sm: 8,
+  md: 16,
+  lg: 24,
+  xl: 32,
+} as const;
 
-  /* Shadows */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.07);
-}
-```
-
-Create `styles/common.css`:
-
-```css
-@import './theme.css';
-
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
-
-body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  font-size: var(--font-size-base);
-  color: var(--color-text);
-  background-color: var(--color-background);
-  line-height: 1.5;
-}
-
-/* Utility: visually hidden but accessible */
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
+export const radii = {
+  sm: 4,
+  md: 8,
+  lg: 12,
+  full: 9999,
+} as const;
 ```
 
 **Step 7: Verify the project builds and tests run**
@@ -187,7 +172,7 @@ Expected: both commands succeed.
 
 ```bash
 git add -A
-git commit -m "feat: scaffold Expo project with directory structure and CSS foundation"
+git commit -m "feat: scaffold Expo project with directory structure and TS theme"
 ```
 
 ---
@@ -321,6 +306,7 @@ export interface Token {
   text: string;
   startMs: number | undefined;
   endMs: number | undefined;
+  /** String, not number — Soniox returns speaker IDs as strings. */
   speakerId: string;
   confidence: number;
   isFinal: boolean;
@@ -649,23 +635,55 @@ describe('IndexedDBStorage', () => {
   });
 
   describe('export/import', () => {
-    it('exports all transcripts', async () => {
+    it('exports all transcripts with their translations', async () => {
       await storage.saveTranscript(makeTranscript({ id: 'a' }));
       await storage.saveTranscript(makeTranscript({ id: 'b' }));
+      await storage.saveTranslation('a', 0, 'es', 'Hola mundo');
+      await storage.saveTranslation('a', 0, 'fr', 'Bonjour le monde');
       const exported = await storage.exportAll();
       expect(exported).toHaveLength(2);
+      const a = exported.find((t) => t.id === 'a');
+      expect(a?.translations[0]).toEqual({ es: 'Hola mundo', fr: 'Bonjour le monde' });
     });
 
-    it('imports transcripts (overwrites existing)', async () => {
+    it('imports transcripts with translations (overwrites existing)', async () => {
       await storage.saveTranscript(makeTranscript({ id: 'a', title: 'old' }));
       const imports = [
-        makeTranscript({ id: 'a', title: 'new' }),
+        {
+          ...makeTranscript({ id: 'a', title: 'new' }),
+          translations: { 0: { es: 'Hola' } },
+        },
         makeTranscript({ id: 'b', title: 'added' }),
       ];
       await storage.importAll(imports);
       const all = await storage.getAllTranscripts();
       expect(all).toHaveLength(2);
       expect(all.find((t) => t.id === 'a')?.title).toBe('new');
+      // Verify translations were also imported
+      const esTranslation = await storage.getTranslation('a', 0, 'es');
+      expect(esTranslation).toBe('Hola');
+    });
+  });
+
+  describe('error handling', () => {
+    it('throws when not initialized', async () => {
+      const uninitStorage = new IndexedDBStorage();
+      await expect(uninitStorage.getTranscript('x')).rejects.toThrow(
+        'not initialized',
+      );
+    });
+
+    it('deleteTranscript on nonexistent id does not throw', async () => {
+      await expect(storage.deleteTranscript('nonexistent')).resolves.not.toThrow();
+    });
+
+    it('getTranslation returns null after transcript is deleted', async () => {
+      await storage.saveTranscript(makeTranscript({ id: 'a' }));
+      await storage.saveTranslation('a', 0, 'es', 'Hola');
+      await storage.deleteTranscript('a');
+      // Translation records are orphaned but transcript is gone
+      const result = await storage.getTranscript('a');
+      expect(result).toBeNull();
     });
   });
 });
@@ -834,12 +852,26 @@ export class IndexedDBStorage implements StorageAdapter {
   }
 
   async exportAll(): Promise<Transcript[]> {
-    return this.getAllTranscripts();
+    const transcripts = await this.getAllTranscripts();
+    // Merge translations into each transcript to prevent data loss (V3)
+    for (const t of transcripts) {
+      const translations = await this.getAllTranslations(t.id);
+      t.translations = translations;
+    }
+    return transcripts;
   }
 
   async importAll(transcripts: Transcript[]): Promise<void> {
     for (const t of transcripts) {
       await this.saveTranscript(t);
+      // Restore translations from the imported transcript
+      if (t.translations) {
+        for (const [segIdx, cache] of Object.entries(t.translations)) {
+          for (const [lang, text] of Object.entries(cache)) {
+            await this.saveTranslation(t.id, Number(segIdx), lang, text);
+          }
+        }
+      }
     }
   }
 }
@@ -1044,9 +1076,14 @@ describe('Pig Latin provider', () => {
     expect(result).toBe('');
   });
 
-  it('preserves punctuation', async () => {
+  it('preserves trailing punctuation', async () => {
     const result = await pigLatinProvider.translate('hello!', 'pig-latin');
     expect(result).toBe('ellohay!');
+  });
+
+  it('preserves leading punctuation', async () => {
+    const result = await pigLatinProvider.translate('"hello"', 'pig-latin');
+    expect(result).toBe('"ellohay"');
   });
 });
 ```
@@ -1069,11 +1106,11 @@ const VOWELS = new Set(['a', 'e', 'i', 'o', 'u']);
 function toPigLatin(word: string): string {
   if (word.length === 0) return '';
 
-  // Separate trailing punctuation
-  const punctMatch = word.match(/^([a-zA-Z]+)([^a-zA-Z]*)$/);
+  // Separate leading and trailing punctuation
+  const punctMatch = word.match(/^([^a-zA-Z]*)([a-zA-Z]+)([^a-zA-Z]*)$/);
   if (!punctMatch) return word;
 
-  const [, letters, punctuation] = punctMatch;
+  const [, leadingPunct, letters, trailingPunct] = punctMatch;
   const isCapitalized = letters[0] === letters[0].toUpperCase();
   const lower = letters.toLowerCase();
 
@@ -1091,7 +1128,7 @@ function toPigLatin(word: string): string {
     result = result[0].toUpperCase() + result.slice(1);
   }
 
-  return result + punctuation;
+  return leadingPunct + result + trailingPunct;
 }
 
 export const pigLatinProvider: TranslationProvider = {
@@ -1266,7 +1303,24 @@ npx jest __tests__/translation/ -v
 
 Expected: all tests PASS
 
-**Step 14: Commit**
+**Step 14: Create barrel export with pre-populated registry**
+
+Create `translation/index.ts`:
+
+```typescript
+export { TranslationRegistry } from './registry';
+export type { TranslationProvider, ConfigField } from './types';
+import { TranslationRegistry } from './registry';
+import { pigLatinProvider } from './providers/pig-latin';
+import { leetSpeakProvider } from './providers/leet-speak';
+
+/** Default registry with built-in test providers pre-registered. */
+export const translationRegistry = new TranslationRegistry();
+translationRegistry.register(pigLatinProvider);
+translationRegistry.register(leetSpeakProvider);
+```
+
+**Step 15: Commit**
 
 ```bash
 git add translation/ __tests__/translation/
@@ -1295,6 +1349,7 @@ import { textFormatter } from '../../export/formatters/text';
 import { markdownFormatter } from '../../export/formatters/markdown';
 import { srtFormatter } from '../../export/formatters/srt';
 import { vttFormatter } from '../../export/formatters/vtt';
+import { MissingTranslationError } from '../../export/types';
 import type { Transcript } from '../../types/transcript';
 
 const transcript: Transcript = {
@@ -1320,11 +1375,23 @@ const transcript: Transcript = {
       language: 'en',
     },
   ],
-  translations: {},
+  translations: {
+    0: { es: 'Hola, como estas?' },
+    1: { es: 'Estoy muy bien, gracias!' },
+  },
   sourceType: 'live',
   settings: {
     diarization: true,
     sourceLanguages: ['en'],
+  },
+};
+
+/** Same transcript but missing translation for segment 1 */
+const partialTranslationTranscript: Transcript = {
+  ...transcript,
+  translations: {
+    0: { es: 'Hola, como estas?' },
+    // segment 1 has no 'es' translation
   },
 };
 
@@ -1404,6 +1471,49 @@ describe('VTT formatter', () => {
     expect(output).toContain('Speaker 1: Hello, how are you?');
   });
 });
+
+describe('language substitution (all formatters)', () => {
+  const formatters = [textFormatter, markdownFormatter, srtFormatter, vttFormatter];
+
+  it('substitutes translations when language is provided', () => {
+    for (const fmt of formatters) {
+      const output = fmt.format(transcript, 'es');
+      expect(output).toContain('Hola, como estas?');
+      expect(output).toContain('Estoy muy bien, gracias!');
+      expect(output).not.toContain('Hello, how are you?');
+    }
+  });
+
+  it('throws MissingTranslationError in strict mode (default)', () => {
+    for (const fmt of formatters) {
+      expect(() => fmt.format(partialTranslationTranscript, 'es')).toThrow(
+        MissingTranslationError,
+      );
+    }
+  });
+
+  it('falls back to original text when strict=false', () => {
+    for (const fmt of formatters) {
+      const output = fmt.format(partialTranslationTranscript, 'es', false);
+      expect(output).toContain('Hola, como estas?');
+      // Segment 1 has no 'es' translation — falls back to original
+      expect(output).toContain('I am doing great, thanks!');
+    }
+  });
+
+  it('JSON formatter substitutes translations when language is provided', () => {
+    const output = jsonFormatter.format(transcript, 'es');
+    const parsed = JSON.parse(output);
+    expect(parsed.segments[0].text).toBe('Hola, como estas?');
+    expect(parsed.segments[1].text).toBe('Estoy muy bien, gracias!');
+  });
+
+  it('JSON formatter throws in strict mode on missing translation', () => {
+    expect(() => jsonFormatter.format(partialTranslationTranscript, 'es')).toThrow(
+      MissingTranslationError,
+    );
+  });
+});
 ```
 
 **Step 2: Run test to verify it fails**
@@ -1419,6 +1529,23 @@ Expected: FAIL
 ```typescript
 import type { Transcript } from '../types/transcript';
 
+/**
+ * Thrown when strict mode is on and a segment has no translation for the
+ * requested language. The UI should catch this and present a pre-export
+ * validation dialog.
+ */
+export class MissingTranslationError extends Error {
+  constructor(
+    public readonly segmentIndex: number,
+    public readonly language: string,
+  ) {
+    super(
+      `Missing translation for segment ${segmentIndex} in language "${language}"`,
+    );
+    this.name = 'MissingTranslationError';
+  }
+}
+
 export interface ExportFormatter {
   /** Unique identifier, e.g. "json", "srt" */
   id: string;
@@ -1428,8 +1555,39 @@ export interface ExportFormatter {
   extension: string;
   /** MIME type for download, e.g. "application/json" */
   mimeType: string;
-  /** Format a transcript into a string. */
-  format(transcript: Transcript, language?: string): string;
+  /**
+   * Format a transcript into a string.
+   *
+   * @param transcript - The transcript to format
+   * @param language - If provided, substitute segment text with the
+   *   translation in this language from transcript.translations
+   * @param strict - If true (default), throw MissingTranslationError when
+   *   a segment has no translation for the requested language. If false,
+   *   fall back to the original segment text.
+   */
+  format(transcript: Transcript, language?: string, strict?: boolean): string;
+}
+
+/**
+ * Helper: resolve segment text, optionally substituting a translation.
+ * Used by all formatters to avoid duplicating the language/strict logic.
+ */
+export function resolveSegmentText(
+  transcript: Transcript,
+  segmentIndex: number,
+  language?: string,
+  strict: boolean = true,
+): string {
+  const segment = transcript.segments[segmentIndex];
+  if (!language) return segment.text;
+
+  const translation = transcript.translations?.[segmentIndex]?.[language];
+  if (translation) return translation;
+
+  if (strict) {
+    throw new MissingTranslationError(segmentIndex, language);
+  }
+  return segment.text;
 }
 ```
 
@@ -1461,14 +1619,24 @@ export class ExportRegistry {
 
 ```typescript
 import type { ExportFormatter } from '../types';
+import { resolveSegmentText } from '../types';
 
 export const jsonFormatter: ExportFormatter = {
   id: 'json',
   name: 'JSON',
   extension: '.json',
   mimeType: 'application/json',
-  format(transcript) {
-    return JSON.stringify(transcript, null, 2);
+  format(transcript, language?, strict = true) {
+    if (!language) return JSON.stringify(transcript, null, 2);
+    // When exporting in a specific language, replace segment text with translations
+    const translated = {
+      ...transcript,
+      segments: transcript.segments.map((seg, i) => ({
+        ...seg,
+        text: resolveSegmentText(transcript, i, language, strict),
+      })),
+    };
+    return JSON.stringify(translated, null, 2);
   },
 };
 ```
@@ -1477,15 +1645,16 @@ export const jsonFormatter: ExportFormatter = {
 
 ```typescript
 import type { ExportFormatter } from '../types';
+import { resolveSegmentText } from '../types';
 
 export const textFormatter: ExportFormatter = {
   id: 'text',
   name: 'Plain Text',
   extension: '.txt',
   mimeType: 'text/plain',
-  format(transcript) {
+  format(transcript, language?, strict = true) {
     return transcript.segments
-      .map((seg) => `Speaker ${seg.speakerId}: ${seg.text}`)
+      .map((seg, i) => `Speaker ${seg.speakerId}: ${resolveSegmentText(transcript, i, language, strict)}`)
       .join('\n');
   },
 };
@@ -1495,13 +1664,14 @@ export const textFormatter: ExportFormatter = {
 
 ```typescript
 import type { ExportFormatter } from '../types';
+import { resolveSegmentText } from '../types';
 
 export const markdownFormatter: ExportFormatter = {
   id: 'markdown',
   name: 'Markdown',
   extension: '.md',
   mimeType: 'text/markdown',
-  format(transcript) {
+  format(transcript, language?, strict = true) {
     const date = new Date(transcript.createdAt).toISOString().split('T')[0];
     const lines = [
       `# ${transcript.title}`,
@@ -1509,8 +1679,10 @@ export const markdownFormatter: ExportFormatter = {
       `*${date} \u2014 ${formatDuration(transcript.durationMs)}*`,
       '',
     ];
-    for (const seg of transcript.segments) {
-      lines.push(`**Speaker ${seg.speakerId}:** ${seg.text}`);
+    for (let i = 0; i < transcript.segments.length; i++) {
+      const seg = transcript.segments[i];
+      const text = resolveSegmentText(transcript, i, language, strict);
+      lines.push(`**Speaker ${seg.speakerId}:** ${text}`);
       lines.push('');
     }
     return lines.join('\n').trim();
@@ -1546,17 +1718,20 @@ function msToSrt(ms: number): string {
   );
 }
 
+import { resolveSegmentText } from '../types';
+
 export const srtFormatter: ExportFormatter = {
   id: 'srt',
   name: 'SRT (Subtitles)',
   extension: '.srt',
   mimeType: 'text/srt',
-  format(transcript) {
+  format(transcript, language?, strict = true) {
     return transcript.segments
       .map((seg, i) => {
         const start = msToSrt(seg.startMs);
         const end = msToSrt(seg.endMs);
-        return `${i + 1}\n${start} --> ${end}\nSpeaker ${seg.speakerId}: ${seg.text}`;
+        const text = resolveSegmentText(transcript, i, language, strict);
+        return `${i + 1}\n${start} --> ${end}\nSpeaker ${seg.speakerId}: ${text}`;
       })
       .join('\n\n');
   },
@@ -1584,17 +1759,20 @@ function msToVtt(ms: number): string {
   );
 }
 
+import { resolveSegmentText } from '../types';
+
 export const vttFormatter: ExportFormatter = {
   id: 'vtt',
   name: 'WebVTT (Subtitles)',
   extension: '.vtt',
   mimeType: 'text/vtt',
-  format(transcript) {
+  format(transcript, language?, strict = true) {
     const cues = transcript.segments
-      .map((seg) => {
+      .map((seg, i) => {
         const start = msToVtt(seg.startMs);
         const end = msToVtt(seg.endMs);
-        return `${start} --> ${end}\nSpeaker ${seg.speakerId}: ${seg.text}`;
+        const text = resolveSegmentText(transcript, i, language, strict);
+        return `${start} --> ${end}\nSpeaker ${seg.speakerId}: ${text}`;
       })
       .join('\n\n');
     return `WEBVTT\n\n${cues}`;
@@ -1637,7 +1815,31 @@ npx jest __tests__/export/registry.test.ts -v
 
 Expected: PASS
 
-**Step 8: Commit**
+**Step 8: Create barrel export with pre-populated registry**
+
+Create `export/index.ts`:
+
+```typescript
+export { ExportRegistry } from './registry';
+export type { ExportFormatter } from './types';
+export { MissingTranslationError, resolveSegmentText } from './types';
+import { ExportRegistry } from './registry';
+import { jsonFormatter } from './formatters/json';
+import { textFormatter } from './formatters/text';
+import { markdownFormatter } from './formatters/markdown';
+import { srtFormatter } from './formatters/srt';
+import { vttFormatter } from './formatters/vtt';
+
+/** Default registry with all built-in formatters pre-registered. */
+export const exportRegistry = new ExportRegistry();
+exportRegistry.register(jsonFormatter);
+exportRegistry.register(textFormatter);
+exportRegistry.register(markdownFormatter);
+exportRegistry.register(srtFormatter);
+exportRegistry.register(vttFormatter);
+```
+
+**Step 9: Commit**
 
 ```bash
 git add export/ __tests__/export/
@@ -1743,6 +1945,7 @@ Expected: FAIL
 
 ```typescript
 import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
 
 export type AppMode = 'local' | 'server';
 export type FontSize = 'sm' | 'base' | 'lg' | 'xl';
@@ -1759,6 +1962,7 @@ interface SettingsState {
   // Soniox
   sonioxApiKey: string;
   diarizationEnabled: boolean;
+  /** Toggle real-time translation during live sessions (per D3 feature set) */
   liveTranslationEnabled: boolean;
 
   // Languages
@@ -1804,7 +2008,9 @@ const initialState = {
   showTimestamps: true,
 };
 
-export const useSettingsStore = create<SettingsState>((set) => ({
+export const useSettingsStore = create<SettingsState>()(
+  persist(
+    (set) => ({
   ...initialState,
 
   setMode: (mode, serverUrl) =>
@@ -1834,7 +2040,19 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setShowTimestamps: (showTimestamps) => set({ showTimestamps }),
 
   reset: () => set(initialState),
-}));
+    }),
+    {
+      name: 'soniox-web-settings',
+      storage: createJSONStorage(() => localStorage),
+      // Don't persist the API key to localStorage for security —
+      // it's only held in memory per session. Re-enter on refresh.
+      partialize: (state) => {
+        const { sonioxApiKey, ...rest } = state;
+        return rest;
+      },
+    },
+  ),
+);
 ```
 
 **Step 4: Run tests to verify they pass**
