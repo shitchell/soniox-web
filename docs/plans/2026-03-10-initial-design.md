@@ -59,7 +59,12 @@ specific backend server without polluting the main repo.
 
 - **Expo (React Native)** — web + Android from one codebase
 - **Expo Router** — file-based navigation with tab layout
-- **TypeScript** throughout
+- **TypeScript** throughout (frontend and backend)
+- **Zustand** — state management, one store per feature module
+- **Plain CSS** — organized by concern (common, theme, helpers, page-specific),
+  CSS variables for theming, relative units (rem/em/%) over px
+- **Node.js backend** — TypeScript, ORM supporting SQLite and Postgres
+- **Email/password auth** — with salt, designed for future OAuth addition
 - **Storage abstraction** — IndexedDB on web, expo-sqlite on native Android
 - **Backend API** — server-side storage with user accounts (server mode)
 - **Expo prebuild (CNG)** — required for real-time audio streaming via
@@ -151,6 +156,16 @@ soniox-web/
 │   └── providers/              # One file per provider
 │       ├── pig-latin.ts        # Test provider: Pig Latin
 │       └── leet-speak.ts       # Test provider: 1337 speak (configurable)
+│
+├── export/                     # Pluggable export formatters
+│   ├── types.ts                # ExportFormatter interface
+│   ├── registry.ts             # Formatter registry
+│   └── formatters/
+│       ├── json.ts
+│       ├── markdown.ts
+│       ├── text.ts
+│       ├── srt.ts
+│       └── vtt.ts
 │
 └── types/                      # Shared TypeScript types
     ├── transcript.ts

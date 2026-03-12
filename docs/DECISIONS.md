@@ -487,6 +487,259 @@ session captures decisions informed by that research.
 | Client-side diarization (pyannote via WASM) | claude considered | Independent of Soniox | Heavy, complex, likely too slow for real-time in browser |
 
 ---
+---
+
+## Session: 2026-03-12 — Implementation Decisions
+
+**Context:** With the architecture and technical constraints established, we
+needed to make concrete implementation decisions before starting to code:
+backend stack, auth, state management, styling, testing strategy, data sync
+semantics, export formats, and distribution plans.
+
+**GVP source:** Inferred inline (same as Session 1)
+
+### New Inferred Values/Principles
+
+- **P3: Tests match requirements, not code** — tests validate behavior against
+  specs, not implementation details. No green checkmarks for the sake of green
+  checkmarks.
+- **P4: Bugs compound** — do not greenlight failing states. If tests fail and
+  we can't figure it out, we stop. We do not move on.
+- **V4: Extensibility** — export formats, translation providers, and similar
+  features should use pluggable/registry patterns so new options can be added
+  without modifying existing code.
+
+---
+
+### D20: Node.js + TypeScript backend with ORM supporting SQLite and Postgres
+
+> The backend uses the same language as the frontend (TypeScript) with an ORM
+> that abstracts the database.
+
+- **Chosen:** Node.js + TypeScript backend, ORM that supports both SQLite and
+  Postgres
+- **Rationale:** user said, "if we're doing react, i'd go ahead and keep it
+  node + typescript. for database, i always love a good ORM so that it doesn't
+  matter :p my only requisite is it must support both sqlite and postgres."
+- **Maps to:** V2, P1
+- **Tags:** backend, database, stack
+
+**Considered:**
+
+| Alternative | Source | Description | Why not? |
+|---|---|---|---|
+| Python/FastAPI | claude considered | Popular for APIs | Different language from frontend; user preferred keeping it TypeScript |
+| Raw SQL / no ORM | claude considered | More control | user explicitly wanted an ORM for database portability |
+
+---
+
+### D21: Email/password auth with future OAuth path
+
+> Server mode uses basic email/password authentication, designed so OAuth can
+> be added later without breaking changes.
+
+- **Chosen:** Email/password/salt authentication, architected for future OAuth
+- **Rationale:** user said, "i'd go with basic email/password/salt for now,
+  designing around a future OAuth addition."
+- **Maps to:** G2, V2
+- **Tags:** auth, server mode
+
+**Considered:**
+
+| Alternative | Source | Description | Why not? |
+|---|---|---|---|
+| OAuth from the start | claude considered | More secure, social login | Over-engineering for current scope |
+| Magic links | claude considered | No password management | Not discussed |
+| Firebase/Supabase Auth | claude considered | Managed auth service | Adds external dependency; conflicts with self-hosted flexibility |
+
+---
+
+### D22: Zustand for state management
+
+> Feature state is managed with Zustand stores — one store per feature module.
+
+- **Chosen:** Zustand — one store per feature in `features/*/store.ts`
+- **Rationale:** user chose Zustand after comparing it with Jotai. Zustand's
+  "one store per feature" model maps directly to the `features/*/store.ts`
+  structure. user said, "i think zustand sounds good for our purposes."
+- **Maps to:** V1, V2
+- **Tags:** state management, frontend
+
+**Considered:**
+
+| Alternative | Source | Description | Why not? |
+|---|---|---|---|
+| Jotai | discussed | Atomic state model, less boilerplate per atom | Better for lots of independent atoms; our state is more "store-shaped" |
+| React Context + useReducer | discussed | Built-in, no dependencies | Can cause unnecessary re-renders |
+| Plain module-level variables | discussed | Simplest | Not reactive; components don't auto-update |
+| Redux | discussed (D10) | Most structured | Overkill for this scope |
+
+---
+
+### D23: Plain CSS with variables and relative sizing
+
+> Styling uses plain CSS organized into semantic files with CSS variables for
+> theming and relative units (rem/em/%) instead of px.
+
+- **Chosen:** Plain CSS files (common, theme, helpers, page-specific as needed),
+  CSS variables, relative sizes
+- **Rationale:** user said, "i kinda prefer just CSS organized into files as
+  relevant (common, theme, helpers, page-specific, whatever makes sense for the
+  layout) with gratuitous variables for easy updates. oh, and i tend to favor
+  relative sizes vs px."
+- **Maps to:** V2
+- **Tags:** styling, frontend
+
+**Considered:**
+
+| Alternative | Source | Description | Why not? |
+|---|---|---|---|
+| NativeWind/Tailwind | claude considered | Utility-first, popular in RN | user preferred plain CSS |
+| styled-components | claude considered | CSS-in-JS, scoped styles | user preferred plain CSS |
+| React Native StyleSheet | claude considered | RN standard | Less flexible than CSS for web-first |
+
+---
+
+### D24: Testing strategy — unit tests, integration tests with real API shapes
+
+> Comprehensive unit tests for everything, integration tests using mock Soniox
+> API results based on real documentation or actual API responses.
+
+- **Chosen:** Unit tests for all features, integration tests with mocked Soniox
+  API based on real docs/responses. Tests match requirements, not code. No
+  moving on with failing tests.
+- **Rationale:** user said, "unit tests for everything, at least a handful of
+  integration tests that comprehensively test things with mock soniox api results
+  (should be based on docs or ideally actual soniox api results -- NOT EVER just
+  whatever we imagine the results probably look like). and i shouldn't have to
+  say this, but tests should match requirements, not code. no green checkmarks
+  for the sake of green checkmarks. also no moving on until all tests pass. if
+  that means we have to stop at some point because we are getting failing tests
+  but can't figure it out, then we stop. we do not greenlight failing states.
+  bugs compound."
+- **Maps to:** P3, P4
+- **Tags:** testing, quality
+
+**Considered:**
+
+| Alternative | Source | Description | Why not? |
+|---|---|---|---|
+| Tests with imagined API responses | discussed | Faster to write | user explicitly forbade this: "NOT EVER just whatever we imagine the results probably look like" |
+| Defer testing | claude considered | Ship faster | Contradicts P4 (bugs compound) |
+
+---
+
+### D25: Transcript sync semantics with shared IDs
+
+> Transcripts share IDs across local and server storage. Sync follows clear
+> source-of-truth rules depending on mode and direction.
+
+- **Chosen:** Shared transcript IDs. Local-to-server sync overwrites server.
+  Server-mode updates propagate to local cache. Server-to-local sync on mode
+  switch (optional, overwrites local). Designed for future detailed conflict
+  resolution.
+- **Rationale:** user said, "i would assume they should share identical
+  transcript IDs. let's make sure that's true -- a requirement. when in local
+  mode, obvs the local is the SOT. when switching from local to server, the
+  local should simply overwrite whatever is on the server. when in server mode
+  and we update a transcript/translation, i would first make that update on the
+  server-side, then check 'do we have any identical transcript IDs locally?' and
+  if yes, then copy the server version as the SOT to the locally cached version.
+  when switching from server to local mode, i would ask the user if they want to
+  sync all of their server data. this would simply overwrite any local copies
+  with server-side stuff. we should design around the idea that we might, in the
+  future, want to do more detailed conflict checking (i.e.: if we have
+  conflicting translations)."
+- **Maps to:** V3, G2
+- **Tags:** sync, storage, data model
+
+**Considered:**
+
+| Alternative | Source | Description | Why not? |
+|---|---|---|---|
+| Separate IDs per storage backend | claude considered | Simpler, no conflicts possible | user explicitly required shared IDs |
+| Full bidirectional sync (CRDT/merge) | claude considered | Most robust | Over-engineering for now; user said "design around the idea that we might, in the future, want to do more detailed conflict checking" |
+| No local cache in server mode | claude considered | Simpler | Loses offline viewing capability |
+
+---
+
+### D26: Per-user data with shareable transcript links
+
+> In server mode, each user's data is isolated. Transcripts can be shared via
+> links.
+
+- **Chosen:** Per-user isolation with share link capability
+- **Rationale:** user said, "per-user, but the ability to create share links
+  would be cool!"
+- **Maps to:** G2
+- **Tags:** multi-user, sharing, server mode
+
+**Considered:**
+
+| Alternative | Source | Description | Why not? |
+|---|---|---|---|
+| Fully shared/collaborative workspace | claude considered | Team use case | Not the primary use case; adds complexity |
+| Per-user with no sharing | claude considered | Simpler | user wanted share links |
+
+---
+
+### D27: Extensible export formatters (markdown, text, SRT, VTT, JSON)
+
+> Export uses a pluggable formatter registry. Import only accepts JSON.
+
+- **Chosen:** Export dropdown with markdown, text, SRT, VTT, and JSON options
+  via extensible formatter pattern. Import restricted to JSON data export format.
+- **Rationale:** user said, "i would have the import only accept the JSON data
+  export, but for the export i'd allow a dropdown -- markdown, text, srt, vtt,
+  or JSON. i'd prefer an extensible formatter setup for this."
+- **Maps to:** V4, G2
+- **Tags:** export, import, data portability
+
+**Considered:**
+
+| Alternative | Source | Description | Why not? |
+|---|---|---|---|
+| JSON only for both import and export | claude considered | Simplest | Limits usefulness for non-technical users |
+| Accept multiple import formats | claude considered | More flexible | user explicitly restricted import to JSON |
+
+---
+
+### D28: Android distribution — sideloading now, Play Store later
+
+> Initial Android distribution via APK sideloading. Play Store submission
+> planned for later.
+
+- **Chosen:** Sideloading for initial distribution, Play Store eventually
+- **Rationale:** user said, "play store eventually, side-loading for now."
+- **Maps to:** G3
+- **Tags:** android, distribution
+
+**Considered:**
+
+| Alternative | Source | Description | Why not? |
+|---|---|---|---|
+| Play Store from the start | claude considered | Wider reach, auto-updates | More overhead (signing, review, policies) for initial release |
+| Web-only, skip native entirely | claude considered | Simpler | Conflicts with G3 (future Android app) |
+
+---
+
+### D29: No backwards compatibility concerns for v1
+
+> v1 is the first version. No backwards compatibility guarantees or migration
+> paths from pre-v1 are needed.
+
+- **Chosen:** No backwards compatibility constraints
+- **Rationale:** user said, "idgaf about backwards compatibility."
+- **Maps to:** V2
+- **Tags:** versioning, scope
+
+**Considered:**
+
+| Alternative | Source | Description | Why not? |
+|---|---|---|---|
+| Stable data format from day one | claude considered | Easier upgrades later | Over-engineering; user explicitly deprioritized this |
+
+---
 
 ### Decisions Requiring Rationale
 
